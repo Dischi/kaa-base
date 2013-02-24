@@ -48,6 +48,9 @@ from .core import Signals, CoreThreading
 from . import timer
 from . import thread
 
+if os.environ.get('KAA_DEBUG', ''):
+    from . import debug
+
 # get logging object
 log = logging.getLogger('kaa.base.core.main')
 
@@ -143,6 +146,8 @@ def init(module=None, reset=False, **options):
             signals['sigchld'].connect(reapAllProcesses)
 
     CoreThreading.init(signals, reset)
+    if os.environ.get('KAA_DEBUG', ''):
+        debug.init()
     signals['init'].emit()
     _initialized = True
 

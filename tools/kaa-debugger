@@ -1,0 +1,112 @@
+#!/usr/bin/python
+# -*- coding: iso-8859-1 -*-
+# -----------------------------------------------------------------------------
+# kaa-debugger - Debugger for kaa applications
+# -----------------------------------------------------------------------------
+# kaa.base - The Kaa Application Framework
+# Copyright 2013 Dirk Meyer, Jason Tackaberry, et al.
+#
+# Please see the file AUTHORS for a complete list of authors.
+#
+# This library is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License version
+# 2.1 as published by the Free Software Foundation.
+#
+# This library is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301 USA
+#
+# -----------------------------------------------------------------------------
+
+import sys
+import os
+import struct
+import getopt
+
+import kaa
+import kaa.utils
+
+pid = None
+
+def trace(line):
+    """
+    Callback for 'trace'
+    """
+    print line.rstrip()
+
+def winpdb(*args):
+    """
+    Callback for 'winpdb'
+    """
+    print 'The password to enter is \'kaa\''
+    os.execvp('winpdb', ['winpdb', '-a', pid])
+
+def usage(code):
+    """
+    Print usage on stdout and exit with code
+    """
+    print 'kaa-debugger command'
+    print '  -t pid  trace kaa application'
+    print '  -w pid  use start winpdb to debug'
+    print '  -l      list all running applications'
+    print
+    sys.exit(code)
+
+# remove old sockets
+for pid in os.listdir(kaa.utils.tempfile('.debug')):
+    if not os.path.exists(os.path.join('/proc/', pid, 'cmdline')):
+        os.unlink(kaa.utils.tempfile('.debug/%s' % pid))
+
+try:
+    # read arguments
+    opts, args = getopt.getopt(sys.argv[1:], 'twlh', [])
+except getopt.GetoptError:
+    usage(1)
+
+command = ''
+for o, a in opts:
+    if o == '-t':
+        command = 'trace'
+    if o == '-w':
+        command = 'winpdb'
+    if o == '-l':
+        for pid in os.listdir(kaa.utils.tempfile('.debug')):
+            cmd = ' '.join(open(os.path.join('/proc/', pid, 'cmdline')).read().split('\00')).strip()
+            print pid, cmd
+        sys.exit(0)
+    if o == '-h':
+        usage(0)
+
+if not args or not command:
+    usage(1)
+
+@kaa.coroutine()
+def main():
+    global pid
+    s = kaa.Socket()
+    path = args[0]
+    if not os.path.exists(path):
+        path = kaa.utils.tempfile('.debug/%s' % path)
+    if not os.path.exists(path):
+        print path, 'not found'
+        print
+        usage(1)
+    pid = os.path.basename(path)
+    yield s.connect(path)
+    if command == 'winpdb':
+        s.signals['readline'].connect(winpdb)
+        s.write(struct.pack('!I', len('winpdb')))
+        s.write('winpdb')
+    if command == 'trace':
+        s.signals['readline'].connect(trace)
+        s.write(struct.pack('!I', len('trace')))
+        s.write('trace')
+
+main()
+kaa.main.run()
